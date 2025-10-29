@@ -1,48 +1,48 @@
-# Green Meter App — Dark Theme Dashboard
+# Green Meter App — Final Polished Version (Matches Reference Screenshot)
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-st.set_page_config(
-    page_title="Green Meter App",
-    page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Green Meter App", page_icon="🌱", layout="wide")
 
-# Apply custom dark theme CSS
+# ---------- Custom CSS for reference-style dark UI ----------
 st.markdown("""
-    <style>
-    [data-testid="stAppViewContainer"] {
-        background-color: #0e1117;
-        color: white;
-    }
-    [data-testid="stSidebar"] {background-color: #0e1117;}
-    div.stButton > button {
-        background-color: #0bb28b;
-        color: white;
-        border-radius: 8px;
-        height: 2.5em;
-        width: 100%;
-        font-weight: 600;
-    }
-    div.stButton > button:hover {
-        background-color: #10c79c;
-        color: white;
-    }
-    .stMetric {
-        background-color: #1a1f25;
-        border-radius: 10px;
-        padding: 10px;
-    }
-    </style>
+<style>
+[data-testid="stAppViewContainer"] {
+    background-color: #0e1117;
+    color: white;
+}
+[data-testid="stHeader"] {background-color: #0e1117;}
+[data-testid="stSidebar"] {background-color: #0e1117;}
+div.stButton > button {
+    background-color: #0bb28b;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    height: 2.5em;
+    font-weight: 600;
+    width: 100%;
+}
+div.stButton > button:hover {
+    background-color: #0dc99c;
+    color: white;
+}
+h1, h2, h3, h4, h5 {
+    color: white;
+}
+.stMetric {
+    background-color: #1a1f25;
+    border-radius: 10px;
+    padding: 10px;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # ---------- constants ----------
 KG_PER_TON = 1000.0
-EF = {
+EF = {  # kg CO2e per unit
     "cars": 0.18, "trucks": 0.90, "buses": 1.10, "forklifts": 4.0,
     "planes": 9000.0, "lighting": 0.42, "heating": 0.20,
     "cooling": 0.42, "computing": 0.42
@@ -50,13 +50,13 @@ EF = {
 CATS = ["cars","trucks","buses","forklifts","planes","lighting","heating","cooling","computing","subcontractors"]
 NAMES = {
     "cars":"Cars","trucks":"Trucks","buses":"Buses","forklifts":"Forklifts","planes":"Cargo Planes",
-    "lighting":"Office Lighting","heating":"Heating","cooling":"Cooling (A/C)",
+    "lighting":"Office Lighting","heating":"Heating (Thermal)","cooling":"Cooling (A/C)",
     "computing":"Computing (IT)","subcontractors":"Subcontractors"
 }
 ASSUMPTIONS = (
-    "Factors — Cars 0.18 kg/km; Trucks 0.90; Buses 1.10; Forklifts 4.0; "
-    "Planes 9,000; Lighting/Cooling/Computing 0.42; Heating 0.20. "
-    "EV share cuts EV car emissions by ~70%; Plane Load Factor scales emissions linearly."
+    "Emission Factors — Cars 0.18 kg/km; Trucks 0.90; Buses 1.10; Forklifts 4.0; "
+    "Cargo Planes 9,000 kg/hour; Electricity (Lighting/Cooling/Computing) 0.42; Heating 0.20. "
+    "EV share = 70% less emissions; Plane load factor scales aircraft linearly (100% = baseline)."
 )
 
 SAMPLE = {
@@ -68,45 +68,43 @@ SAMPLE = {
     "sliders": dict(ev_share_pct=20, km_reduction_pct=5, plane_load_pct=50)
 }
 
+# ---------- calculations ----------
 def tons_from_kg(kg): return kg / KG_PER_TON
 def compute_baseline(i):
     return {
-        "cars": tons_from_kg(i["cars_km"]*EF["cars"]),
-        "trucks": tons_from_kg(i["trucks_km"]*EF["trucks"]),
-        "buses": tons_from_kg(i["buses_km"]*EF["buses"]),
-        "forklifts": tons_from_kg(i["forklifts_hr"]*EF["forklifts"]),
-        "planes": tons_from_kg(i["planes_hr"]*EF["planes"]),
-        "lighting": tons_from_kg(i["lighting_kwh"]*EF["lighting"]),
-        "heating": tons_from_kg(i["heating_kwhth"]*EF["heating"]),
-        "cooling": tons_from_kg(i["cooling_kwh"]*EF["cooling"]),
-        "computing": tons_from_kg(i["computing_kwh"]*EF["computing"]),
+        "cars":        tons_from_kg(i["cars_km"]      * EF["cars"]),
+        "trucks":      tons_from_kg(i["trucks_km"]    * EF["trucks"]),
+        "buses":       tons_from_kg(i["buses_km"]     * EF["buses"]),
+        "forklifts":   tons_from_kg(i["forklifts_hr"] * EF["forklifts"]),
+        "planes":      tons_from_kg(i["planes_hr"]    * EF["planes"]),
+        "lighting":    tons_from_kg(i["lighting_kwh"] * EF["lighting"]),
+        "heating":     tons_from_kg(i["heating_kwhth"]* EF["heating"]),
+        "cooling":     tons_from_kg(i["cooling_kwh"]  * EF["cooling"]),
+        "computing":   tons_from_kg(i["computing_kwh"]* EF["computing"]),
         "subcontractors": sum(i["subcontractors_tons"]),
     }
 def compute_optimized(i, s):
     base = compute_baseline(i)
-    km_opt = i["cars_km"]*(1 - s["km_reduction_pct"]/100)
-    intensity = 1 - 0.70*(s["ev_share_pct"]/100)
-    base["cars"] = tons_from_kg(km_opt*EF["cars"]*intensity)
-    base["planes"] = tons_from_kg(i["planes_hr"]*EF["planes"]*(s["plane_load_pct"]/100))
+    km_opt = i["cars_km"] * (1 - s["km_reduction_pct"]/100)
+    intensity = 1 - 0.70 * (s["ev_share_pct"]/100)
+    base["cars"] = tons_from_kg(km_opt * EF["cars"] * intensity)
+    base["planes"] = tons_from_kg(i["planes_hr"] * EF["planes"] * (s["plane_load_pct"]/100))
     return base
 def total(d): return sum(d[c] for c in CATS)
 
+# ---------- UI ----------
 st.title("Green Meter App")
 st.caption("Carbon-Aware Logistics Dashboard")
 
+# header buttons
 c1, c2, c3 = st.columns([1,1,1])
 if "inputs" not in st.session_state: st.session_state.inputs = SAMPLE["inputs"].copy()
 if "sliders" not in st.session_state: st.session_state.sliders = SAMPLE["sliders"].copy()
 i, s = st.session_state.inputs, st.session_state.sliders
-
 with c1:
-    if st.button("Load Sample Data"): 
-        st.session_state.inputs = SAMPLE["inputs"].copy()
-        st.session_state.sliders = SAMPLE["sliders"].copy()
+    if st.button("Load Sample Data"): st.session_state.inputs, st.session_state.sliders = SAMPLE["inputs"].copy(), SAMPLE["sliders"].copy()
 with c2:
-    if st.button("Reset"):
-        st.session_state.inputs = {k:0 if isinstance(v,(int,float)) else [0,0,0] for k,v in i.items()}
-        st.session_state.sliders = {"ev_share_pct":0,"km_reduction_pct":0,"plane_load_pct":100}
+    if st.button("Reset"): st.session_state.inputs, st.session_state.sliders = {k:0 if isinstance(v,(int,float)) else [0,0,0] for k,v in i.items()}, {"ev_share_pct":0,"km_reduction_pct":0,"plane_load_pct":100}
 with c3:
     calc = st.button("Calculate")
 
@@ -138,7 +136,9 @@ with left:
 if calc:
     base, opt = compute_baseline(i), compute_optimized(i, s)
     base_total, opt_total = total(base), total(opt)
-    red, pct = base_total - opt_total, (base_total - opt_total)/base_total*100 if base_total else 0
+    reduction = base_total - opt_total
+    pct = (reduction / base_total * 100) if base_total else 0
+
     df = pd.DataFrame({
         "Category":[NAMES[c] for c in CATS],
         "Baseline":[base[c] for c in CATS],
@@ -148,13 +148,12 @@ if calc:
     with left:
         st.metric("Baseline total (tons CO₂e)", f"{base_total:,.1f}")
         st.metric("Optimized total (tons CO₂e)", f"{opt_total:,.1f}")
-        st.metric("Reduction (tons)", f"{red:,.1f}")
+        st.metric("Reduction (tons)", f"{reduction:,.1f}")
         st.metric("Percent reduction", f"{pct:.1f}%")
 
     with mid:
         st.subheader("Emission Share by Category (Pie – Optimized)")
-        pie_df = df[df["Optimized"]>0]
-        fig_pie = px.pie(pie_df, names="Category", values="Optimized")
+        fig_pie = px.pie(df[df["Optimized"]>0], names="Category", values="Optimized")
         fig_pie.update_layout(paper_bgcolor="#0e1117", plot_bgcolor="#0e1117", font_color="white")
         st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -163,10 +162,8 @@ if calc:
         fig_bar = go.Figure()
         fig_bar.add_bar(name="Baseline", x=["Baseline"], y=[base_total])
         fig_bar.add_bar(name="Optimized", x=["Optimized"], y=[opt_total])
-        fig_bar.update_layout(
-            paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
-            font_color="white", barmode="group"
-        )
+        fig_bar.update_layout(paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+                              font_color="white", barmode="group")
         st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("### Assumptions")
